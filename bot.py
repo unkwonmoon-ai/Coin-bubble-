@@ -2,11 +2,13 @@ import os
 import telebot
 import requests
 from bs4 import BeautifulSoup
+from flask import Flask
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # دریافت توکن از Environment Variable
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# لیست نام‌های سکه و آدرس‌های مربوطه در سایت tgju.org
+app = Flask(__name__)
+
 COINS = {
     "ربع سکه": "sekebarr-rob",
     "نیم سکه": "sekebarr-nim",
@@ -59,6 +61,11 @@ def send_coin_info(message):
     else:
         bot.send_message(message.chat.id, "لطفا یکی از موارد مشخص شده را وارد کنید.")
 
+@app.route("/")
+def index():
+    return "🤖 ربات فعال است."
+
 if __name__ == "__main__":
-    print("🤖 Bot is running...")
-    bot.infinity_polling()
+    import threading
+    threading.Thread(target=lambda: bot.infinity_polling()).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

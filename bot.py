@@ -7,45 +7,42 @@ import os
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
-# URL صفحه وب TGJU برای اطلاعات حباب سکه‌ها
-url = 'https://www.tgju.org/profile/coin'
+# URL صفحه سکه‌ها در سایت zcoinn
+URL = "https://zcoinn.com/coin/"
 
-# نگهداری نام سکه‌ها و URL یا بخش مرتبط در سایت TGJU
-coin_paths = {
-    "ربع سکه": "rab-sekeh",
-    "نیم سکه": "nim-sekeh",
-    "سکه امامی": "emami-sekeh",
-    "تمام سکه بهار آزادی": "bahar-azadi",
+# نگهداری نام سکه‌ها و شناسه‌های آن‌ها
+coins = {
+    "ربع سکه": "ربع-سکه",
+    "نیم سکه": "نیم-سکه",
+    "سکه امامی": "سکه-امامی",
+    "تمام سکه بهار آزادی": "تمام-سکه-بهار-آزادی",
 }
 
-# دریافت اطلاعات حباب سکه از سایت
-def get_coin_info(coin):
-    if coin not in coin_paths:
-        return None
-
+# تابع دریافت اطلاعات از سایت zcoinn
+def get_coin_info(coin_name):
     try:
-        response = requests.get(f"{url}/{coin_paths[coin]}")
+        response = requests.get(URL)
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # پیدا کردن قیمت بازار
-        price_tag = soup.find("div", {"class": "price"})
-        price = price_tag.text.strip() if price_tag else "نامشخص"
+        # پیدا کردن بخش مربوط به هر سکه
+        coin_div = soup.find("a", {"href": f"/coin/{coins[coin_name]}"})
+        if not coin_div:
+            return None
 
-        # پیدا کردن حباب
-        bubble_tag = soup.find("div", {"class": "bubble"})
-        bubble = bubble_tag.text.strip() if bubble_tag else "نامشخص"
+        parent = coin_div.find_parent("tr")
+        cells = parent.find_all("td")
 
-        # محاسبه درصد حباب
-        if price != "نامشخص" and bubble != "نامشخص":
-            price_num = float(price.replace(",", ""))
-            bubble_num = float(bubble.replace(",", ""))
-            intrinsic_value = price_num - bubble_num
-            percent_bubble = (bubble_num / intrinsic_value) * 100
-            percent_bubble = round(percent_bubble, 2)
-        else:
-            percent_bubble = "نامشخص"
+        price_text = cells[2].text.strip()  # قیمت فروش
+        bubble_text = cells[3].text.strip()  # حباب
 
-        return price, bubble, percent_bubble
+        price_num = float(price_text.replace(",", ""))
+        bubble_num = float(bubble_text.replace(",", ""))
+
+        intrinsic_value = price_num - bubble_num
+        percent_bubble = (bubble_num / intrinsic_value) * 100
+        percent_bubble = round(percent_bubble, 2)
+
+        return price_text, bubble_text, percent_bubble
 
     except Exception as e:
         return None
@@ -55,13 +52,17 @@ def get_coin_info(coin):
 def send_welcome(message):
     bot.reply_to(
         message,
-        "سلام 🌸\nنام یکی از سکه‌ها را وارد کنید:\nربع سکه\nنیم سکه\nسکه امامی\nتمام سکه بهار آزادی",
+        "سلام 🌸\nلطفاً یکی از سکه‌ها را وارد کنید:\nربع سکه\nنیم سکه\nسکه امامی\nتمام سکه بهار آزادی",
     )
 
 # پاسخ به پیام‌ها
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     coin = message.text.strip()
+    if coin not in coins:
+        bot.reply_to(message, "سکه یافت نشد ❌ لطفاً یکی از موارد پیشنهادی را وارد کنید.")
+        return
+
     result = get_coin_info(coin)
     if result:
         price, bubble, percent_bubble = result
@@ -70,7 +71,7 @@ def handle_message(message):
             f"💰 قیمت {coin}: {price} تومان\n📈 حباب: {bubble} تومان\n📊 درصد حباب: {percent_bubble}%",
         )
     else:
-        bot.reply_to(message, "سکه یافت نشد یا مشکل در دریافت اطلاعات پیش آمد.")
+        bot.reply_to(message, "خطا در دریافت اطلاعات از سایت 😔 لطفاً بعداً امتحان کنید.")
 
 # اجرای ربات
 bot.polling()

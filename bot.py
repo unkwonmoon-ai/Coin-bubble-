@@ -3,74 +3,62 @@ import telebot
 import requests
 from bs4 import BeautifulSoup
 
-# توکن رو از Environment Variable می‌گیره
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ Bot token not found. Please set BOT_TOKEN in Render Environment Variables.")
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # دریافت توکن از Environment Variable
+bot = telebot.TeleBot(BOT_TOKEN)
 
-bot = telebot.TeleBot(TOKEN)
-
-# لیست سکه‌هایی که پشتیبانی می‌کنیم
+# لیست نام‌های سکه و آدرس‌های مربوطه در سایت tgju.org
 COINS = {
     "ربع سکه": "sekebarr-rob",
     "نیم سکه": "sekebarr-nim",
     "سکه امامی": "sekebarr-emami",
-    "تمام سکه بهار آزادی": "sekebarr-bahar"
+    "تمام سکه بهار آزادی": "sekebarr-tamam"
 }
 
-def fetch_coin_data(coin_id):
-    """داده‌ها رو از سایت tgju می‌گیره"""
-    url = f"https://www.tgju.org/profile/{coin_id}"
-    response = requests.get(url, timeout=10)
-    if response.status_code != 200:
-        return None
-
-    soup = BeautifulSoup(response.text, "html.parser")
-
+def fetch_coin_data(coin_url):
+    url = f"https://www.tgju.org/profile/{coin_url}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     try:
-        price = soup.select_one(".price").text.strip().replace(",", "")
-        intrinsic = soup.select_one(".info .value").text.strip().replace(",", "")
-        price = float(price)
-        intrinsic = float(intrinsic)
-        bubble = price - intrinsic
-        percent = (bubble / intrinsic) * 100
-        return price, bubble, percent
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        price_element = soup.select_one(".price")
+        intrinsic_value_element = soup.select_one(".info .value")
+
+        if not price_element or not intrinsic_value_element:
+            return None, None, None
+
+        price = int(price_element.text.strip().replace(",", ""))
+        intrinsic_value = int(intrinsic_value_element.text.strip().replace(",", ""))
+        bubble = price - intrinsic_value
+        bubble_percent = (bubble / intrinsic_value) * 100
+
+        return price, bubble, bubble_percent
+
     except Exception as e:
-        print("Parse error:", e)
-        return None
+        print(f"خطا در دریافت اطلاعات: {e}")
+        return None, None, None
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    text = (
-        "👋 سلام! خوش اومدی.\n\n"
-        "لطفاً یکی از موارد زیر را تایپ کنید:\n"
-        "- ربع سکه\n"
-        "- نیم سکه\n"
-        "- سکه امامی\n"
-        "- تمام سکه بهار آزادی\n"
-    )
-    bot.reply_to(message, text)
+@bot.message_handler(commands=["start"])
+def start(message):
+    bot.send_message(message.chat.id,
+                     "سلام 🌸\nلطفا یکی از موارد زیر را تایپ کنید:\nربع سکه\nنیم سکه\nسکه امامی\nتمام سکه بهار آزادی")
 
-@bot.message_handler(func=lambda m: True)
-def handle_message(message):
+@bot.message_handler(func=lambda msg: True)
+def send_coin_info(message):
     coin_name = message.text.strip()
-    if coin_name not in COINS:
-        bot.reply_to(message, "❌ نام سکه نامعتبر است. یکی از موارد لیست را تایپ کنید.")
-        return
+    if coin_name in COINS:
+        price, bubble, bubble_percent = fetch_coin_data(COINS[coin_name])
+        if price:
+            bot.send_message(message.chat.id,
+                             f"💰 قیمت بازار {coin_name}: {price:,} تومان\n"
+                             f"📈 حباب: {bubble:,} تومان\n"
+                             f"📊 درصد حباب: {bubble_percent:.2f}%")
+        else:
+            bot.send_message(message.chat.id, "خطا در دریافت اطلاعات از سایت.")
+    else:
+        bot.send_message(message.chat.id, "لطفا یکی از موارد مشخص شده را وارد کنید.")
 
-    data = fetch_coin_data(COINS[coin_name])
-    if not data:
-        bot.reply_to(message, "⚠️ خطا در دریافت اطلاعات از سایت.")
-        return
-
-    price, bubble, percent = data
-    reply = (
-        f"📊 اطلاعات {coin_name}:\n"
-        f"💰 قیمت بازار: {price:,.0f} تومان\n"
-        f"📉 حباب: {bubble:,.0f} تومان\n"
-        f"📈 درصد حباب: {percent:.2f}%"
-    )
-    bot.reply_to(message, reply)
-
-print("🤖 Bot is running...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    print("🤖 Bot is running...")
+    bot.infinity_polling()
